@@ -1,0 +1,99 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: dockers/django/Dockerfile
+    container_name: analyte_back
+    volumes:
+      - .:/app
+      - static:/app/static
+      - media:/app/media
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./.envs/.django
+      - ./.envs/.postgres
+    depends_on:
+      - db
+      - mailhog
+      - redis
+    command: python manage.py runserver 0.0.0.0:8000
+
+
+  db:
+    container_name: postgres_database
+    image: postgres:13.3
+    env_file: ./.envs/.postgres
+    restart: always
+    volumes:
+        - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "65432:5432"
+
+  redis:
+    restart: always
+    image: redis:6-alpine
+    container_name: redis
+    ports:
+      - "36379:6379"
+    volumes:
+      - redis-data:/data
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: dockers/django/Dockerfile
+    command: celery -A project_analyte worker --loglevel=info
+    container_name: celery_worker
+    env_file:
+      - ./.envs/.django
+      - ./.envs/.postgres
+    depends_on:
+      - redis
+      - db
+      - mailhog
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: dockers/django/Dockerfile
+    env_file:
+      - ./.envs/.django
+      - ./.envs/.postgres
+    command: celery -A project_analyte beat -l info
+    depends_on:
+      - redis
+      - db
+
+  flower:
+    build:
+      context: .
+      dockerfile: dockers/django/Dockerfile
+    command: celery flower -A project_analyte --port=5555 --broker=redis://redis:6379/0
+    container_name: flower
+
+    env_file:
+      - ./.envs/.django
+      - ./.envs/.postgres
+    ports:
+      - '5555:5555'
+    depends_on:
+      - redis
+      - db
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.0
+    container_name: mailhog
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+
+volumes:
+  postgres_data:
+  redis-data:
+  static:
+  media:
+

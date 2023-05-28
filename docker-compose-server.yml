@@ -1,0 +1,76 @@
+version: "3.9"
+services:
+
+  backend:
+    container_name: backend_analyte
+    build:
+        context: https://gitlab+deploy-token-1437372:srsC-BCwRxstsos6zfQM@gitlab.com/asinible/analyte_gitlab.git#development
+        #dockerfile: Dockerfile
+    command: gunicorn project_analyte.wsgi:application --bind 0.0.0.0:8000
+    env_file: .env
+    environment:
+       - VIRTUAL_PORT=8000
+       - VIRTUAL_HOST=www.analyticsassistant.kz
+       - LETSENCRYPT_HOST=www.analyticsassistant.kz
+    volumes:
+        - ./media:/app/media
+        - django-static:/app/static
+    restart: always
+    tty: true
+    depends_on:
+        - db
+
+  frontend:
+    container_name: frontend_analyte
+    build:
+      context: https://gitlab+deploy-token-1510270:FyuRzPY6Ks2SQwSd1HiZ@gitlab.com/ayanpost87/analytic-assistant.git#main
+
+    volumes:
+      - dist:/angular-app/dist/analytic_assistant:ro
+      - node_modules:/analytic-assistant/node_modules
+    command: npm run start
+
+  db:
+    container_name: postgres_database
+    image: postgres:13.3
+    env_file: .database.env
+    restart: always
+    volumes:
+        - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  nginx-proxy:
+      image: jwilder/nginx-proxy
+      depends_on:
+          - backend
+          - frontend
+      ports:
+          - "80:80"
+          - "443:443"
+      restart: always
+      volumes_from:
+            - backend
+            - frontend
+      volumes:
+          - ./nginx/conf:/etc/nginx/conf.d
+          - ./nginx/vhost:/etc/nginx/vhost.d
+          #- ./nginx/html:/usr/share/nginx/html
+          - dist:/usr/share/nginx/html:rw
+          - django-static:/www/static/storage/
+          - dhparam:/etc/nginx/dhparam
+          - certs:/etc/nginx/certs
+          - /var/run/docker.sock:/tmp/docker.sock:ro
+
+  letsencrypt-nginx-proxy-companion:
+    restart: always
+    image: jrcs/letsencrypt-nginx-proxy-companion
+
+    volumes:
+        - certs:/etc/nginx/certs
+        - acme:/etc/acme.sh
+        - /var/run/docker.sock:/var/run/docker.sock:ro
+    volumes_from:
+      - nginx-proxy
+    depends_on:
+        - nginx-proxy
